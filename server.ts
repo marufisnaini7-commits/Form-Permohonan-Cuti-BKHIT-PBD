@@ -5,43 +5,64 @@ import http from "http";
 import { URL } from "url";
 import { createServer as createViteServer } from "vite";
 
-// Robust redirect-following HTTP client
+// Robust redirect-following HTTP client with custom headers
 function fetchUrlWithRedirect(targetUrl: string, maxRedirects = 10): Promise<{ status: number; headers: any; body: string }> {
   return new Promise((resolve, reject) => {
     if (maxRedirects <= 0) {
       return reject(new Error("Terlalu banyak pengalihan (redirect) oleh Google."));
     }
 
-    const client = targetUrl.startsWith("https") ? https : http;
-
-    client.get(targetUrl, (res) => {
-      const { statusCode } = res;
-      
-      // Follow redirects (301, 302, 303, 307, 308)
-      if (statusCode && statusCode >= 300 && statusCode < 400 && res.headers.location) {
-        let redirectUrl = res.headers.location;
-        if (!redirectUrl.startsWith("http")) {
-          const parsedUrl = new URL(targetUrl);
-          redirectUrl = `${parsedUrl.protocol}//${parsedUrl.host}${redirectUrl}`;
+    try {
+      const urlObj = new URL(targetUrl);
+      const options = {
+        protocol: urlObj.protocol,
+        hostname: urlObj.hostname,
+        port: urlObj.port || (urlObj.protocol === "https:" ? 443 : 80),
+        path: urlObj.pathname + urlObj.search,
+        method: "GET",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,text/plain,*/*;q=0.8",
+          "Accept-Language": "id,en-US,en;q=0.9",
         }
-        return fetchUrlWithRedirect(redirectUrl, maxRedirects - 1).then(resolve, reject);
-      }
+      };
 
-      let rawData = "";
-      res.setEncoding("utf8");
-      res.on("data", (chunk) => {
-        rawData += chunk;
-      });
-      res.on("end", () => {
-        resolve({
-          status: statusCode || 200,
-          headers: res.headers,
-          body: rawData
+      const client = targetUrl.startsWith("https") ? https : http;
+
+      const req = client.request(options, (res) => {
+        const { statusCode } = res;
+        
+        // Follow redirects (301, 302, 303, 307, 308)
+        if (statusCode && statusCode >= 300 && statusCode < 400 && res.headers.location) {
+          let redirectUrl = res.headers.location;
+          if (!redirectUrl.startsWith("http")) {
+            redirectUrl = `${urlObj.protocol}//${urlObj.host}${redirectUrl}`;
+          }
+          return fetchUrlWithRedirect(redirectUrl, maxRedirects - 1).then(resolve, reject);
+        }
+
+        let rawData = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => {
+          rawData += chunk;
+        });
+        res.on("end", () => {
+          resolve({
+            status: statusCode || 200,
+            headers: res.headers,
+            body: rawData
+          });
         });
       });
-    }).on("error", (err) => {
+
+      req.on("error", (err) => {
+        reject(err);
+      });
+
+      req.end();
+    } catch (err) {
       reject(err);
-    });
+    }
   });
 }
 
@@ -62,16 +83,17 @@ async function startServer() {
 
       console.log(`Proxying public sheet request: ID=${id}, Sheet=${sheet}`);
 
-      // We use the official, cleanest /export format
-      const googleSheetUrl = `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&sheet=${encodeURIComponent(sheet as string)}`;
+      // We use gviz/tq?tqx=out:csv which supports selecting tabs by name on public spreadsheets
+      const googleSheetUrl = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet as string)}`;
       
       const result = await fetchUrlWithRedirect(googleSheetUrl);
 
       // Check for Google Login redirect / HTML response (means sheet is private)
-      const isHtml = result.body.includes("<!DOCTYPE html>") || result.body.includes("<html") || result.body.includes("google-signin");
+      const isHtml = result.body.includes("<!DOCTYPE html>") || result.body.includes("<html") || result.body.includes("google-signin") || result.body.includes("ServiceLogin");
       if (isHtml) {
+        console.warn(`HTML response detected from Google Sheets. Body snippet: ${result.body.slice(0, 300)}`);
         return res.status(403).json({
-          error: `Spreadsheet ini bersifat pribadi. Silakan buka menu "Bagikan" di Google Sheets Anda, lalu setel Akses Umum ke "Siapa saja yang memiliki link dapat melihat" (Viewer / Pengakses lihat-saja).`
+          error: `Spreadsheet ini bersifat pribadi (terkunci). Silakan buka menu "Bagikan" (Share) di Google Sheets Anda, lalu ubah Akses Umum menjadi "Siapa saja yang memiliki link dapat melihat" (Anyone with the link can view / Viewer), kemudian coba lagi.`
         });
       }
 
@@ -81,15 +103,16 @@ async function startServer() {
         });
       }
 
-      if (result.status === 400 || result.body.includes("INVALID_SHEET_NAME") || result.body.includes("tidak ditemukan")) {
+      if (result.status === 400 || result.body.includes("INVALID_SHEET_NAME") || result.body.includes("not found") || result.body.includes("RESOURCE_NOT_FOUND")) {
         return res.status(400).json({
-          error: `Tab "${sheet}" tidak ditemukan di Spreadsheet Anda. Pastikan nama tab tersebut ada (huruf besar/kecil berpengaruh).`
+          error: `Tab "${sheet}" tidak ditemukan di Spreadsheet Anda. Pastikan nama tab tersebut ada (sama persis, huruf besar/kecil berpengaruh, tanpa spasi ekstra) dan diberi nama "Pegawai" untuk daftar pegawai, dan "Permohonan Cuti" untuk daftar permohonan.`
         });
       }
 
       if (result.status !== 200) {
+        console.warn(`Non-200 response from Google: ${result.status}. Body: ${result.body.slice(0, 200)}`);
         return res.status(result.status).json({
-          error: `Gagal menarik data dari Google (Kode Status: ${result.status}).`
+          error: `Gagal menarik data dari Google (Kode Status: ${result.status}). Detail: ${result.body.slice(0, 150)}`
         });
       }
 

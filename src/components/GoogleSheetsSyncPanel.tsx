@@ -65,13 +65,14 @@ export const GoogleSheetsSyncPanel: React.FC<GoogleSheetsSyncPanelProps> = ({
       setErrorMsg('ID atau URL Spreadsheet tidak boleh kosong.');
       return;
     }
-    // Simple check to extract ID if user inputs the whole URL
+    // Extremely robust regex check to extract ID if user inputs a full URL or part of it
     let finalId = cleanId;
-    if (cleanId.includes('/d/')) {
-      const parts = cleanId.split('/d/');
-      if (parts[1]) {
-        finalId = parts[1].split('/')[0];
-      }
+    const match = cleanId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match && match[1]) {
+      finalId = match[1];
+    } else {
+      // Clean quotes, trailing slashes or spaces if they pasted just the ID but with garbage
+      finalId = cleanId.replace(/["']/g, "").trim();
     }
     setErrorMsg('');
     onLinkExistingSheet(finalId);
