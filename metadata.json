@@ -1,0 +1,6 @@
+{
+  "name": "Aplikasi Permintaan Cuti",
+  "description": "Aplikasi form permintaan cuti pegawai BKHIT Papua Barat Daya terintegrasi dengan database sisa cuti, download dokumen permohonan, dan panel persetujuan pimpinan.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
