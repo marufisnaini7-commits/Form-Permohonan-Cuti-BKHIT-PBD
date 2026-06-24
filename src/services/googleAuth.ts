@@ -52,7 +52,7 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     localStorage.setItem('spc_access_token_v1', cachedAccessToken);
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
-    console.error('Sign in error:', error);
+    console.warn('Sign in error:', error);
     throw error;
   } finally {
     isSigningIn = false;

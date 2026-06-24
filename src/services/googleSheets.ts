@@ -246,3 +246,115 @@ export async function fetchFromGoogleSheet(spreadsheetId: string, accessToken: s
 
   return { employees, requests };
 }
+
+/**
+ * Simple robust CSV parser for Google Sheets Query CSV output.
+ * Handles quoted cells with embedded commas properly.
+ */
+function parseCsv(csvText: string): string[][] {
+  const result: string[][] = [];
+  const lines = csvText.split(/\r?\n/);
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const row: string[] = [];
+    let inQuotes = false;
+    let currentCell = '';
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        row.push(currentCell.trim());
+        currentCell = '';
+      } else {
+        currentCell += char;
+      }
+    }
+    row.push(currentCell.trim());
+    result.push(row);
+  }
+  return result;
+}
+
+/**
+ * Fetch and parse data from Google Sheet publicly (Without Access Token / Credentials)
+ * Requires the Spreadsheet to be shared as "Anyone with link can view".
+ */
+export async function fetchFromPublicGoogleSheet(spreadsheetId: string): Promise<SheetData> {
+  const employeesUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=Pegawai`;
+  const requestsUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=Permohonan%20Cuti`;
+
+  // Fetch both concurrently
+  const [empResponse, reqResponse] = await Promise.all([
+    fetch(employeesUrl),
+    fetch(requestsUrl)
+  ]);
+
+  if (!empResponse.ok || !reqResponse.ok) {
+    throw new Error('Gagal mengambil data dari Google Sheet publik. Pastikan Spreadsheet Anda telah disetel ke "Siapa saja yang memiliki link dapat melihat" di menu Bagikan.');
+  }
+
+  const empText = await empResponse.text();
+  const reqText = await reqResponse.text();
+
+  const empRows = parseCsv(empText);
+  const reqRows = parseCsv(reqText);
+
+  const employees: Employee[] = [];
+  const requests: LeaveRequest[] = [];
+
+  // Parse Pegawai
+  if (empRows.length > 1) {
+    // Row 0 is headers: ["ID", "NIP", "Nama", "Jabatan", "Masa Kerja", "Unit Kerja", "Sisa Cuti N", "Sisa Cuti N-1", "Sisa Cuti N-2"]
+    for (let i = 1; i < empRows.length; i++) {
+      const row = empRows[i];
+      if (row.length < 3) continue; // Invalid row
+
+      const empId = row[0] || 'emp-' + Math.random().toString(36).substring(2, 9);
+      employees.push({
+        id: empId,
+        nip: row[1] || '',
+        nama: row[2] || '',
+        jabatan: row[3] || '',
+        masaKerja: row[4] || '',
+        unitKerja: row[5] || '',
+        sisaCutiN: isNaN(parseInt(row[6])) ? 12 : parseInt(row[6]),
+        sisaCutiN1: isNaN(parseInt(row[7])) ? 6 : parseInt(row[7]),
+        sisaCutiN2: isNaN(parseInt(row[8])) ? 6 : parseInt(row[8])
+      });
+    }
+  }
+
+  // Parse Permohonan Cuti
+  if (reqRows.length > 1) {
+    for (let i = 1; i < reqRows.length; i++) {
+      const row = reqRows[i];
+      if (row.length < 4) continue; // Invalid row
+
+      const reqId = row[0] || 'req-' + Math.random().toString(36).substring(2, 9);
+      requests.push({
+        id: reqId,
+        employeeId: row[1] || '',
+        employeeNip: row[2] || '',
+        employeeName: row[3] || '',
+        employeeJabatan: row[4] || '',
+        employeeMasaKerja: row[5] || '',
+        employeeUnitKerja: row[6] || '',
+        jenisCuti: (row[7] as JenisCuti) || 'Cuti Tahunan',
+        tanggalMulai: row[8] || '',
+        tanggalSelesai: row[9] || '',
+        alasan: row[10] || '',
+        alamatCuti: row[11] || '',
+        telp: row[12] || '',
+        durasiHari: isNaN(parseInt(row[13])) ? 0 : parseInt(row[13]),
+        status: (row[14] as StatusCuti) || 'Pending',
+        catatanAtasan: row[15] || '',
+        catatanPimpinan: row[16] || '',
+        tanggalPersetujuan: row[17] || '',
+        tanggalPengajuan: row[18] || ''
+      });
+    }
+  }
+
+  return { employees, requests };
+}
