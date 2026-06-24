@@ -486,7 +486,7 @@ export const DocumentPreviewCard: React.FC<DocumentPreviewProps> = ({ request, s
                 </tr>
                 <tr>
                   <td className="p-1 border-r border-black">Unit Kerja</td>
-                  <td colspan="3" className="p-1">{request.employeeUnitKerja}</td>
+                  <td colSpan={3} className="p-1">{request.employeeUnitKerja}</td>
                 </tr>
               </tbody>
             </table>
@@ -547,7 +547,7 @@ export const DocumentPreviewCard: React.FC<DocumentPreviewProps> = ({ request, s
             <table className="w-full border-collapse border-l border-r border-b border-black text-[9px]">
               <tbody>
                 <tr className="border-b border-black">
-                  <td colspan="3" className="w-[50%] p-1 border-r border-black font-bold text-center">1. CUTI TAHUNAN</td>
+                  <td colSpan={3} className="w-[50%] p-1 border-r border-black font-bold text-center">1. CUTI TAHUNAN</td>
                   <td className="w-[42%] p-1 border-r border-black font-bold">2. CUTI BESAR</td>
                   <td className="w-[8%] p-1 text-center font-bold">{request.jenisCuti === 'Cuti Besar' ? '√' : ''}</td>
                 </tr>
@@ -629,7 +629,7 @@ export const DocumentPreviewCard: React.FC<DocumentPreviewProps> = ({ request, s
                   <td>{request.status === 'Ditolak' ? '√' : ''}</td>
                 </tr>
                 <tr>
-                  <td colspan="4" className="text-left p-1.5">
+                  <td colSpan={4} className="text-left p-1.5">
                     <div className="flex justify-between items-end">
                       <div className="w-[50%]">
                         <p className="font-bold text-[9px]">Catatan Atasan:</p>
@@ -668,7 +668,7 @@ export const DocumentPreviewCard: React.FC<DocumentPreviewProps> = ({ request, s
                   <td>{request.status === 'Ditolak' ? '√' : ''}</td>
                 </tr>
                 <tr>
-                  <td colspan="4" className="text-left p-1.5">
+                  <td colSpan={4} className="text-left p-1.5">
                     <div className="flex justify-between items-end">
                       <div className="w-[50%]">
                         <p className="font-bold text-[9px]">Catatan Kepala Balai:</p>
