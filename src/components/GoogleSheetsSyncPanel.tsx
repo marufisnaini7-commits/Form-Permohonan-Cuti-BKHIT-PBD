@@ -55,14 +55,14 @@ export const GoogleSheetsSyncPanel: React.FC<GoogleSheetsSyncPanelProps> = ({
 }) => {
   const [inputSheetId, setInputSheetId] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
-  // Panel collapsed by default to keep the interface pristine and clean!
-  const [isExpanded, setIsExpanded] = useState(false);
+  // Panel expanded by default if there's no connected spreadsheet, so users notice it immediately!
+  const [isExpanded, setIsExpanded] = useState(!spreadsheetId);
 
   const handleLinkSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanId = inputSheetId.trim();
     if (!cleanId) {
-      setErrorMsg('ID Spreadsheet tidak boleh kosong.');
+      setErrorMsg('ID atau URL Spreadsheet tidak boleh kosong.');
       return;
     }
     // Simple check to extract ID if user inputs the whole URL
@@ -177,16 +177,16 @@ export const GoogleSheetsSyncPanel: React.FC<GoogleSheetsSyncPanelProps> = ({
             </div>
           )}
 
-          {/* SINKRONISASI GOOGLE SHEETS OPTIONS (OPSIONAL) */}
+          {/* SINKRONISASI GOOGLE SHEETS OPTIONS */}
           <div className="border border-gray-100 rounded-2xl p-4 md:p-5 bg-slate-50/30">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
               <div>
                 <h4 className="font-bold text-xs text-gray-900 flex items-center space-x-1.5">
                   <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
-                  <span>Sinkronisasi Google Sheets (Fitur Backup & Publikasi Opsional)</span>
+                  <span>Sinkronisasi Google Sheets (Koneksi Database Cloud)</span>
                 </h4>
                 <p className="text-[11px] text-gray-500 mt-1">
-                  Gunakan fitur ini jika ingin mempublikasikan saldo cuti pimpinan agar dapat dibaca secara live oleh seluruh pegawai.
+                  Gunakan fitur ini jika ingin menyambungkan aplikasi dengan Google Spreadsheet agar data tersimpan aman di cloud dan dapat diakses oleh semua pegawai.
                 </p>
               </div>
 
@@ -228,23 +228,23 @@ export const GoogleSheetsSyncPanel: React.FC<GoogleSheetsSyncPanelProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-center bg-indigo-50/30 p-4 rounded-xl border border-indigo-100/50 mt-4 animate-fadeIn">
                 <div className="md:col-span-8 space-y-1.5">
                   <div className="flex items-center space-x-2 text-xs font-bold text-indigo-900">
-                    <CheckCircle2 className="w-4 h-4 text-indigo-600 animate-pulse" />
+                    <CheckCircle2 className="w-4 h-4 text-indigo-600 shrink-0" />
                     <span>Sinkronisasi Google Sheet Aktif (Mode Pegawai - Read-Only)</span>
                   </div>
                   <p className="text-[11px] text-gray-600 leading-relaxed">
                     Aplikasi saat ini membaca database sisa cuti resmi pimpinan langsung dari Google Sheet publik. Pegawai dapat memantau saldo cuti secara real-time.
                   </p>
                   <div className="flex flex-wrap gap-2 text-[10px] text-gray-500 font-mono">
-                    <span>ID Spreadsheet: <span className="bg-white border border-gray-200 px-1.5 py-0.5 rounded font-semibold">{spreadsheetId}</span></span>
+                    <span>ID Spreadsheet: <span className="bg-white border border-gray-200 px-1.5 py-0.5 rounded font-semibold text-gray-700">{spreadsheetId}</span></span>
                     {lastSynced && <span>• Sinkronisasi Terakhir: <strong>{lastSynced}</strong></span>}
                   </div>
                 </div>
 
-                <div className="md:col-span-4 flex justify-end gap-2 shrink-0">
+                <div className="md:col-span-4 flex flex-col sm:flex-row justify-end gap-2 shrink-0">
                   <button
                     onClick={onPullData}
                     disabled={syncStatus === 'syncing'}
-                    className="inline-flex items-center space-x-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                    className="inline-flex items-center justify-center space-x-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all disabled:opacity-50 cursor-pointer"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
                     <span>Segarkan</span>
@@ -254,19 +254,55 @@ export const GoogleSheetsSyncPanel: React.FC<GoogleSheetsSyncPanelProps> = ({
                     target="_blank"
                     referrerPolicy="no-referrer"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center space-x-1 px-3 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-semibold transition-all shadow-2xs"
+                    className="inline-flex items-center justify-center space-x-1 px-3 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-semibold transition-all shadow-2xs"
                   >
                     <span>Buka Sheet</span>
                     <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
                   </a>
+                  <button
+                    onClick={onChangeSheet}
+                    className="text-[11px] text-red-600 hover:text-red-700 font-bold py-1 px-2 hover:bg-red-50 rounded-lg transition-colors cursor-pointer text-center"
+                  >
+                    Putuskan Link
+                  </button>
                 </div>
               </div>
             ) : !user ? (
-              /* CASE B: NO SPREADSHEET & NO USER (STANDALONE PIN WORKSPACE) */
-              <div className="p-4 bg-white border border-gray-150 rounded-xl mt-4 text-center">
-                <p className="text-[11px] text-gray-600 leading-relaxed max-w-xl mx-auto">
-                  💡 <strong>Mode Penyimpanan Lokal Aktif (Sangat Aman & Stabil):</strong> Data Anda tersimpan aman secara offline di browser Anda. Klik tombol <strong>"Sign in Google"</strong> di atas secara opsional jika Anda ingin membuat cadangan data / mempublikasikannya ke Google Spreadsheet BKHIT.
-                </p>
+              /* CASE B: NO SPREADSHEET & NO USER (STANDALONE PIN WORKSPACE WITH MANUAL LINK OPTION FOR EMPLOYEES) */
+              <div className="space-y-4 mt-4 animate-fadeIn">
+                <div className="p-4 bg-indigo-50/40 border border-indigo-100 rounded-xl text-indigo-950 text-[11px] leading-relaxed">
+                  💡 <strong>Mode Penyimpanan Lokal Aktif:</strong> Saat ini aplikasi berjalan offline menggunakan database lokal browser Anda. 
+                  <br />
+                  <span className="font-semibold text-indigo-900">Pegawai dapat menghubungkan Google Spreadsheet Publik pimpinan di bawah ini agar data pegawai dan sisa cuti sinkron secara otomatis dari cloud.</span>
+                </div>
+                
+                <div className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 shadow-2xs transition-all max-w-xl mx-auto text-left">
+                  <h5 className="font-bold text-xs text-indigo-900 flex items-center space-x-1.5 uppercase tracking-wide">
+                    <Link2 className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Hubungkan Spreadsheet Publik Pegawai</span>
+                  </h5>
+                  <p className="text-[10px] text-gray-500 mt-2 leading-relaxed">
+                    Tempel URL Google Spreadsheet atau ID Spreadsheet yang telah dibagikan oleh pimpinan BKHIT Papua Barat Daya (harus disetel ke <strong>"Siapa saja yang memiliki link dapat melihat / Viewer"</strong> di menu Bagikan Google Sheets).
+                  </p>
+                  <form onSubmit={handleLinkSubmit} className="mt-3.5 space-y-2">
+                    <div className="flex gap-1.5 flex-col sm:flex-row">
+                      <input
+                        type="text"
+                        placeholder="Tempel ID atau URL Google Spreadsheet di sini..."
+                        value={inputSheetId}
+                        onChange={e => setInputSheetId(e.target.value)}
+                        className="flex-grow text-[11px] border border-gray-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-600 outline-none bg-white font-mono"
+                      />
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold transition-colors cursor-pointer shrink-0 text-center"
+                      >
+                        Hubungkan Sheet Publik
+                      </button>
+                    </div>
+                    {errorMsg && <p className="text-[10px] text-red-600 font-bold mt-1">{errorMsg}</p>}
+                  </form>
+                </div>
               </div>
             ) : !spreadsheetId ? (
               /* CASE C: USER LOGGED IN, NO SPREADSHEET CONNECTED */
