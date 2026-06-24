@@ -281,8 +281,8 @@ function parseCsv(csvText: string): string[][] {
  * Requires the Spreadsheet to be shared as "Anyone with link can view".
  */
 export async function fetchFromPublicGoogleSheet(spreadsheetId: string): Promise<SheetData> {
-  const employeesUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=Pegawai`;
-  const requestsUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=Permohonan%20Cuti`;
+  const employeesUrl = `/api/public-sheet?id=${spreadsheetId}&sheet=Pegawai`;
+  const requestsUrl = `/api/public-sheet?id=${spreadsheetId}&sheet=Permohonan%20Cuti`;
 
   // Fetch both concurrently
   const [empResponse, reqResponse] = await Promise.all([
@@ -290,8 +290,30 @@ export async function fetchFromPublicGoogleSheet(spreadsheetId: string): Promise
     fetch(requestsUrl)
   ]);
 
-  if (!empResponse.ok || !reqResponse.ok) {
-    throw new Error('Gagal mengambil data dari Google Sheet publik. Pastikan Spreadsheet Anda telah disetel ke "Siapa saja yang memiliki link dapat melihat" di menu Bagikan.');
+  if (!empResponse.ok) {
+    let errorMsg = 'Gagal mengambil data Pegawai dari Google Sheet publik.';
+    try {
+      const errJson = await empResponse.json();
+      if (errJson && errJson.error) {
+        errorMsg = errJson.error;
+      }
+    } catch (e) {
+      // Not JSON or parse failed
+    }
+    throw new Error(errorMsg);
+  }
+
+  if (!reqResponse.ok) {
+    let errorMsg = 'Gagal mengambil data Permohonan Cuti dari Google Sheet publik.';
+    try {
+      const errJson = await reqResponse.json();
+      if (errJson && errJson.error) {
+        errorMsg = errJson.error;
+      }
+    } catch (e) {
+      // Not JSON or parse failed
+    }
+    throw new Error(errorMsg);
   }
 
   const empText = await empResponse.text();
