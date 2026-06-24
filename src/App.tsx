@@ -177,10 +177,17 @@ export default function App() {
 
   // Link Existing Spreadsheet
   const handleLinkExistingSheet = async (id: string) => {
-    if (!accessToken) return;
     setSyncStatus('syncing');
+    setSyncError(null);
     try {
-      const data = await fetchFromGoogleSheet(id, accessToken);
+      let data;
+      if (accessToken) {
+        // Mode Terautentikasi (Pimpinan)
+        data = await fetchFromGoogleSheet(id, accessToken);
+      } else {
+        // Mode Publik (Pegawai) - Hubungkan dengan Spreadsheet Publik
+        data = await fetchFromPublicGoogleSheet(id);
+      }
       setEmployees(data.employees);
       setRequests(data.requests);
       
@@ -199,7 +206,12 @@ export default function App() {
     } catch (err: any) {
       console.warn('Failed to link existing spreadsheet:', err);
       setSyncStatus('error');
-      alert(`Gagal menghubungkan Spreadsheet. Pastikan ID benar dan Anda memiliki hak akses. Error: ${err.message || err}`);
+      let friendlyMessage = err.message || String(err);
+      if (friendlyMessage.includes('Failed to fetch') || friendlyMessage.includes('fetch')) {
+        friendlyMessage = 'Gagal mengambil data dari Google Sheet. Pastikan Spreadsheet Anda telah disetel ke "Siapa saja yang memiliki link dapat melihat" (Viewer / Pengakses lihat-saja) di menu Bagikan Google Sheets.';
+      }
+      setSyncError(friendlyMessage);
+      alert(`Gagal menghubungkan Spreadsheet: ${friendlyMessage}`);
     }
   };
 
