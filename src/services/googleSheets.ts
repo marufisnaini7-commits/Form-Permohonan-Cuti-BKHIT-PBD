@@ -291,27 +291,62 @@ export async function fetchFromPublicGoogleSheet(spreadsheetId: string): Promise
   ]);
 
   if (!empResponse.ok) {
-    let errorMsg = 'Gagal mengambil data Pegawai dari Google Sheet publik.';
+    let errorMsg = `Gagal mengambil data Pegawai dari Google Sheet publik (Kode Status: ${empResponse.status}).`;
     try {
-      const errJson = await empResponse.json();
-      if (errJson && errJson.error) {
-        errorMsg = errJson.error;
+      const errText = await empResponse.text();
+      try {
+        const errJson = JSON.parse(errText);
+        if (errJson && errJson.error) {
+          errorMsg = errJson.error;
+        }
+      } catch (e) {
+        // Not a JSON response, maybe HTML or plain text
+        if (errText && errText.trim()) {
+          // If it's HTML, extract the title or just show a snippet
+          if (errText.includes('<title>')) {
+            const titleMatch = errText.match(/<title>([^<]+)<\/title>/i);
+            if (titleMatch && titleMatch[1]) {
+              errorMsg += ` Detail: ${titleMatch[1].trim()}`;
+            } else {
+              errorMsg += ` Detail: ${errText.slice(0, 150).replace(/<[^>]*>/g, '').trim()}...`;
+            }
+          } else {
+            errorMsg += ` Detail: ${errText.slice(0, 150).trim()}`;
+          }
+        }
       }
     } catch (e) {
-      // Not JSON or parse failed
+      // Fetch text failed
     }
     throw new Error(errorMsg);
   }
 
   if (!reqResponse.ok) {
-    let errorMsg = 'Gagal mengambil data Permohonan Cuti dari Google Sheet publik.';
+    let errorMsg = `Gagal mengambil data Permohonan Cuti dari Google Sheet publik (Kode Status: ${reqResponse.status}).`;
     try {
-      const errJson = await reqResponse.json();
-      if (errJson && errJson.error) {
-        errorMsg = errJson.error;
+      const errText = await reqResponse.text();
+      try {
+        const errJson = JSON.parse(errText);
+        if (errJson && errJson.error) {
+          errorMsg = errJson.error;
+        }
+      } catch (e) {
+        // Not a JSON response
+        if (errText && errText.trim()) {
+          if (errText.includes('<title>')) {
+            const titleMatch = errText.match(/<title>([^<]+)<\/title>/i);
+            if (titleMatch && titleMatch[1]) {
+              errorMsg += ` Detail: ${titleMatch[1].trim()}`;
+            } else {
+              errorMsg += ` Detail: ${errText.slice(0, 150).replace(/<[^>]*>/g, '').trim()}...`;
+            }
+          } else {
+            errorMsg += ` Detail: ${errText.slice(0, 150).trim()}`;
+          }
+        }
       }
     } catch (e) {
-      // Not JSON or parse failed
+      // Fetch text failed
     }
     throw new Error(errorMsg);
   }

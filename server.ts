@@ -81,12 +81,49 @@ async function startServer() {
         return res.status(400).json({ error: "Spreadsheet ID dan Nama Sheet wajib diisi." });
       }
 
-      console.log(`Proxying public sheet request: ID=${id}, Sheet=${sheet}`);
+      // Extremely robust ID extraction on server side
+      let cleanId = (id as string).trim();
+      const idMatch = cleanId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      if (idMatch && idMatch[1]) {
+        cleanId = idMatch[1];
+      } else {
+        cleanId = cleanId.replace(/["']/g, "").trim();
+      }
+
+      console.log(`Proxying public sheet request: ID=${cleanId}, Sheet=${sheet}`);
 
       // We use gviz/tq?tqx=out:csv which supports selecting tabs by name on public spreadsheets
-      const googleSheetUrl = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet as string)}`;
+      const googleSheetUrl = `https://docs.google.com/spreadsheets/d/${cleanId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet as string)}`;
       
       const result = await fetchUrlWithRedirect(googleSheetUrl);
+
+      // Check if it's a Google Visualization query error wrapped in JSONP
+      if (result.body.includes("google.visualization.Query.setResponse")) {
+        const jsonMatch = result.body.match(/google\.visualization\.Query\.setResponse\(([\s\S]*?)\);?$/);
+        if (jsonMatch && jsonMatch[1]) {
+          try {
+            const gData = JSON.parse(jsonMatch[1].trim());
+            if (gData.status === "error" && gData.errors && gData.errors.length > 0) {
+              const gErr = gData.errors[0];
+              console.warn(`Google Sheets Query API error detected:`, gErr);
+              if (gErr.reason === "access_denied" || (gErr.message && gErr.message.includes("access_denied"))) {
+                return res.status(403).json({
+                  error: `Akses ditolak (Access Denied) oleh Google Sheets API. 
+
+Untuk memperbaiki hal ini, pastikan Anda telah melakukan kedua langkah berikut:
+1. Di Google Sheets Anda, buka menu "File" -> "Bagikan" -> "Publikasikan ke web" (Publish to the web), lalu klik tombol "Publikasikan".
+2. Di tombol "Bagikan" (Akses Umum) di pojok kanan atas, pastikan telah disetel ke "Siapa saja yang memiliki link dapat melihat" (Viewer / Pengakses lihat-saja).`
+                });
+              }
+              return res.status(400).json({
+                error: `Kendala Google Sheets: ${gErr.message || gErr.detailed_message || "Akses tidak diizinkan."}`
+              });
+            }
+          } catch (e) {
+            // Failed parsing, fallback to text check
+          }
+        }
+      }
 
       // Check for Google Login redirect / HTML response (means sheet is private)
       const isHtml = result.body.includes("<!DOCTYPE html>") || result.body.includes("<html") || result.body.includes("google-signin") || result.body.includes("ServiceLogin");
@@ -99,7 +136,7 @@ async function startServer() {
 
       if (result.status === 404) {
         return res.status(404).json({
-          error: `Spreadsheet dengan ID "${id}" tidak ditemukan. Pastikan ID Spreadsheet yang dimasukkan sudah benar.`
+          error: `Spreadsheet dengan ID "${cleanId}" tidak ditemukan. Pastikan ID Spreadsheet yang dimasukkan sudah benar.`
         });
       }
 
