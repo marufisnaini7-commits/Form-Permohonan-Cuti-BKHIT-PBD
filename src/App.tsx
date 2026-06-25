@@ -31,14 +31,14 @@ export default function App() {
   // Google Apps Script / Sheet database states
   const [spreadsheetId, setSpreadsheetId] = useState<string | null>(() => {
     const stored = localStorage.getItem('spc_spreadsheet_id_v1');
-    if (stored) return stored;
+    if (stored && stored.trim() !== '' && stored !== 'null') return stored;
     const disconnected = localStorage.getItem('spc_manually_disconnected_v1');
     if (disconnected) return null;
     return DEFAULT_SPREADSHEET_ID || null;
   });
   const [appscriptUrl, setAppscriptUrl] = useState<string | null>(() => {
     const stored = localStorage.getItem('spc_appscript_url_v1');
-    if (stored) return stored;
+    if (stored && stored.trim() !== '' && stored !== 'null') return stored;
     const disconnected = localStorage.getItem('spc_manually_disconnected_v1');
     if (disconnected) return null;
     return DEFAULT_APPSCRIPT_URL || null;
@@ -75,10 +75,16 @@ export default function App() {
     }
 
     // Auto pull data if connected (either saved in localStorage or using default config)
-    const activeSpreadsheetId = localStorage.getItem('spc_spreadsheet_id_v1') || 
-      (localStorage.getItem('spc_manually_disconnected_v1') ? null : DEFAULT_SPREADSHEET_ID);
-    const activeAppscriptUrl = localStorage.getItem('spc_appscript_url_v1') || 
-      (localStorage.getItem('spc_manually_disconnected_v1') ? null : DEFAULT_APPSCRIPT_URL);
+    const storedId = localStorage.getItem('spc_spreadsheet_id_v1');
+    const storedUrl = localStorage.getItem('spc_appscript_url_v1');
+    
+    const activeSpreadsheetId = (storedId && storedId.trim() !== '' && storedId !== 'null') 
+      ? storedId 
+      : (localStorage.getItem('spc_manually_disconnected_v1') ? null : DEFAULT_SPREADSHEET_ID);
+      
+    const activeAppscriptUrl = (storedUrl && storedUrl.trim() !== '' && storedUrl !== 'null') 
+      ? storedUrl 
+      : (localStorage.getItem('spc_manually_disconnected_v1') ? null : DEFAULT_APPSCRIPT_URL);
 
     if (activeSpreadsheetId && activeAppscriptUrl) {
       handlePullData(activeSpreadsheetId, activeAppscriptUrl);

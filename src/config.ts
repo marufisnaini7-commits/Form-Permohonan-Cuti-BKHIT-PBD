@@ -12,9 +12,9 @@
 // Silakan isi ID Spreadsheet default Anda di sini jika tidak menggunakan env variable
 export const DEFAULT_SPREADSHEET_ID = 
   ((import.meta as any).env?.VITE_DEFAULT_SPREADSHEET_ID as string) || 
-  ""; // Contoh: "1LKS6zNYOnddTZoZs87488V-SOocRBkLKa54si0nhe0Q"
+  "1LKS6zNYOnddTZoZs87488V-SOocRBkLKa54si0nhe0Q";
 
 // Silakan isi URL Web App Apps Script default Anda di sini jika tidak menggunakan env variable
 export const DEFAULT_APPSCRIPT_URL = 
   ((import.meta as any).env?.VITE_DEFAULT_APPSCRIPT_URL as string) || 
-  ""; // Contoh: "https://script.google.com/macros/s/AKfycbyOvkamK-G9s8xPYHvM65SIHSKZoLza8E4Ppjgrrs7Q48R4ucfjX0vN1GU7I_UaaECaOg/exec"
+  "https://script.google.com/macros/s/AKfycbyOvkamK-G9s8xPYHvM65SIHSKZoLza8E4Ppjgrrs7Q48R4ucfjX0vN1GU7I_UaaECaOg/exec";
