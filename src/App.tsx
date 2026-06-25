@@ -6,9 +6,7 @@ import { DashboardPimpinan } from './components/DashboardPimpinan';
 import { DatabaseCutiView } from './components/DatabaseCutiView';
 import { BusinessProcessView } from './components/BusinessProcessView';
 import { GoogleSheetsSyncPanel } from './components/GoogleSheetsSyncPanel';
-import { initAuth, googleSignIn, logout } from './services/googleAuth';
-import { createSpreadsheet, syncToGoogleSheet, fetchFromGoogleSheet, fetchFromPublicGoogleSheet } from './services/googleSheets';
-import { User } from 'firebase/auth';
+import { fetchFromAppsScript, syncToAppsScript } from './services/googleSheets';
 import { ClipboardCheck, FileText, Settings, HelpCircle, Building2, CalendarRange, Lock, Unlock, Key } from 'lucide-react';
 
 const LOCAL_STORAGE_EMPLOYEES_KEY = 'spc_employees_v1';
@@ -29,16 +27,14 @@ export default function App() {
   const [isUnlocked, setIsUnlocked] = useState(() => !!sessionStorage.getItem('spc_unlocked_v1'));
   const [savedPin, setSavedPin] = useState(() => localStorage.getItem('spc_pimpinan_pin_v1') || '1971');
 
-  // Google OAuth / Sheets states
-  const [user, setUser] = useState<User | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
+  // Google Apps Script / Sheet database states
   const [spreadsheetId, setSpreadsheetId] = useState<string | null>(localStorage.getItem('spc_spreadsheet_id_v1'));
+  const [appscriptUrl, setAppscriptUrl] = useState<string | null>(localStorage.getItem('spc_appscript_url_v1'));
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const [syncError, setSyncError] = useState<string | null>(null);
   const [lastSynced, setLastSynced] = useState<string | null>(localStorage.getItem('spc_last_synced_v1'));
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  // Load Initial State & Google Auth
+  // Load Initial State & Pull from Google Sheet
   useEffect(() => {
     try {
       const storedEmployees = localStorage.getItem(LOCAL_STORAGE_EMPLOYEES_KEY);
@@ -65,29 +61,12 @@ export default function App() {
       setInitialized(true);
     }
 
-    // Initialize Google Auth listener
-    initAuth(
-      (currentUser, token) => {
-        setUser(currentUser);
-        setAccessToken(token);
-        
-        // If we have a spreadsheet ID, pull data from Google Sheets immediately
-        const storedSpreadsheetId = localStorage.getItem('spc_spreadsheet_id_v1');
-        if (storedSpreadsheetId) {
-          handlePullData(storedSpreadsheetId, token);
-        }
-      },
-      () => {
-        setUser(null);
-        setAccessToken(null);
-        
-        // If we have a spreadsheet ID but no authenticated token, pull data publicly
-        const storedSpreadsheetId = localStorage.getItem('spc_spreadsheet_id_v1');
-        if (storedSpreadsheetId) {
-          handlePullData(storedSpreadsheetId, null);
-        }
-      }
-    );
+    // Auto pull data if connected
+    const storedSpreadsheetId = localStorage.getItem('spc_spreadsheet_id_v1');
+    const storedAppscriptUrl = localStorage.getItem('spc_appscript_url_v1');
+    if (storedSpreadsheetId && storedAppscriptUrl) {
+      handlePullData(storedSpreadsheetId, storedAppscriptUrl);
+    }
   }, []);
 
   // Helper to save locally & sync in background if connected
@@ -102,139 +81,66 @@ export default function App() {
       console.warn('Failed to save to localStorage:', e);
     }
 
-    // Auto sync to Google Sheets if connected
-    if (spreadsheetId && accessToken) {
+    // Auto sync to Google Sheets if connected via Google Apps Script
+    if (spreadsheetId && appscriptUrl) {
       setSyncStatus('syncing');
       try {
-        await syncToGoogleSheet(spreadsheetId, updatedEmployees, updatedRequests, accessToken);
+        await syncToAppsScript(appscriptUrl, spreadsheetId, updatedEmployees, updatedRequests);
         setSyncStatus('success');
         const timeStr = new Date().toLocaleTimeString('id-ID');
         setLastSynced(timeStr);
         localStorage.setItem('spc_last_synced_v1', timeStr);
       } catch (err) {
-        console.warn('Auto-sync to Google Sheets failed:', err);
+        console.warn('Auto-sync to Google Sheets via Apps Script failed:', err);
         setSyncStatus('error');
       }
     }
   };
 
-  // Google Login
-  const handleLogin = async () => {
-    setIsLoggingIn(true);
-    try {
-      const result = await googleSignIn();
-      if (result) {
-        setUser(result.user);
-        setAccessToken(result.accessToken);
-        
-        // If we already have a spreadsheet ID linked, pull from it
-        const storedId = localStorage.getItem('spc_spreadsheet_id_v1');
-        if (storedId) {
-          await handlePullData(storedId, result.accessToken);
-        }
-      }
-    } catch (err) {
-      console.warn('Google Sign-In failed:', err);
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  // Google Logout
-  const handleLogout = async () => {
-    try {
-      await logout();
-      setUser(null);
-      setAccessToken(null);
-    } catch (err) {
-      console.warn('Logout failed:', err);
-    }
-  };
-
-  // Create New Spreadsheet
-  const handleCreateNewSheet = async () => {
-    if (!accessToken) return;
-    setSyncStatus('syncing');
-    try {
-      const newId = await createSpreadsheet(accessToken);
-      setSpreadsheetId(newId);
-      localStorage.setItem('spc_spreadsheet_id_v1', newId);
-      
-      // Upload current local data to newly created sheet
-      await syncToGoogleSheet(newId, employees, requests, accessToken);
-      
-      setSyncStatus('success');
-      const timeStr = new Date().toLocaleTimeString('id-ID');
-      setLastSynced(timeStr);
-      localStorage.setItem('spc_last_synced_v1', timeStr);
-      alert('Google Spreadsheet baru berhasil dibuat dan disinkronkan di Google Drive Anda!');
-    } catch (err: any) {
-      console.warn('Failed to create new spreadsheet:', err);
-      setSyncStatus('error');
-      alert(`Gagal membuat Spreadsheet: ${err.message || err}`);
-    }
-  };
-
-  // Link Existing Spreadsheet
-  const handleLinkExistingSheet = async (id: string) => {
+  // Connect via Google Apps Script Web App Bridge
+  const handleConnectAppsScript = async (id: string, url: string) => {
     setSyncStatus('syncing');
     setSyncError(null);
     try {
-      let data;
-      if (accessToken) {
-        // Mode Terautentikasi (Pimpinan)
-        data = await fetchFromGoogleSheet(id, accessToken);
-      } else {
-        // Mode Publik (Pegawai) - Hubungkan dengan Spreadsheet Publik
-        data = await fetchFromPublicGoogleSheet(id);
-      }
+      const data = await fetchFromAppsScript(url, id);
       setEmployees(data.employees);
       setRequests(data.requests);
-      
-      // Save locally
+
+      // Save to localStorage
       localStorage.setItem(LOCAL_STORAGE_EMPLOYEES_KEY, JSON.stringify(data.employees));
       localStorage.setItem(LOCAL_STORAGE_REQUESTS_KEY, JSON.stringify(data.requests));
-      
+
       setSpreadsheetId(id);
+      setAppscriptUrl(url);
       localStorage.setItem('spc_spreadsheet_id_v1', id);
-      
+      localStorage.setItem('spc_appscript_url_v1', url);
+
       setSyncStatus('success');
       const timeStr = new Date().toLocaleTimeString('id-ID');
       setLastSynced(timeStr);
       localStorage.setItem('spc_last_synced_v1', timeStr);
-      alert('Google Sheet berhasil dihubungkan dan data berhasil disinkronkan!');
+      alert('Berhasil menghubungkan Google Spreadsheet via Jembatan Apps Script!');
     } catch (err: any) {
-      console.warn('Failed to link existing spreadsheet:', err);
+      console.warn('Error connecting via Apps Script:', err);
       setSyncStatus('error');
-      let friendlyMessage = err.message || String(err);
-      if (friendlyMessage.includes('Failed to fetch') || friendlyMessage.includes('fetch')) {
-        friendlyMessage = 'Gagal mengambil data dari Google Sheet. Pastikan Spreadsheet Anda telah disetel ke "Siapa saja yang memiliki link dapat melihat" (Viewer / Pengakses lihat-saja) di menu Bagikan Google Sheets.';
-      }
-      setSyncError(friendlyMessage);
-      alert(`Gagal menghubungkan Spreadsheet: ${friendlyMessage}`);
+      setSyncError(err.message || String(err));
+      alert(`Gagal menghubungkan: ${err.message || err}`);
     }
   };
 
   // Pull (Refresh) Data
-  const handlePullData = async (targetId = spreadsheetId, targetToken = accessToken) => {
-    if (!targetId) return;
+  const handlePullData = async (targetId = spreadsheetId, targetUrl = appscriptUrl) => {
+    if (!targetId || !targetUrl) return;
     setSyncStatus('syncing');
     setSyncError(null);
     try {
-      let data;
-      if (targetToken) {
-        // Mode Terautentikasi (Pimpinan)
-        data = await fetchFromGoogleSheet(targetId, targetToken);
-      } else {
-        // Mode Publik (Pegawai)
-        data = await fetchFromPublicGoogleSheet(targetId);
-      }
+      const data = await fetchFromAppsScript(targetUrl, targetId);
       setEmployees(data.employees);
       setRequests(data.requests);
-      
+
       localStorage.setItem(LOCAL_STORAGE_EMPLOYEES_KEY, JSON.stringify(data.employees));
       localStorage.setItem(LOCAL_STORAGE_REQUESTS_KEY, JSON.stringify(data.requests));
-      
+
       setSyncStatus('success');
       const timeStr = new Date().toLocaleTimeString('id-ID');
       setLastSynced(timeStr);
@@ -242,17 +148,13 @@ export default function App() {
     } catch (err: any) {
       console.warn('Error pulling data from Google Sheet:', err);
       setSyncStatus('error');
-      let friendlyMessage = err.message || String(err);
-      if (friendlyMessage.includes('Failed to fetch') || friendlyMessage.includes('fetch')) {
-        friendlyMessage = 'Gagal memuat data dari Google Sheet. Hal ini biasanya terjadi karena Spreadsheet belum dibagikan secara publik. Harap pastikan Spreadsheet Anda disetel ke "Siapa saja yang memiliki link dapat melihat" (Viewer / Pengakses lihat-saja) di menu Bagikan (Share) Google Sheets.';
-      }
-      setSyncError(friendlyMessage);
+      setSyncError(err.message || String(err));
     }
   };
 
   // Push Data (Explicit update with confirmation)
   const handlePushData = async () => {
-    if (!spreadsheetId || !accessToken) return;
+    if (!spreadsheetId || !appscriptUrl) return;
     const confirmed = window.confirm(
       'Apakah Anda yakin ingin mengunggah data saat ini ke Google Sheets? Tindakan ini akan menimpa seluruh data pegawai dan riwayat cuti yang ada di Google Sheet tersebut.'
     );
@@ -260,12 +162,12 @@ export default function App() {
 
     setSyncStatus('syncing');
     try {
-      await syncToGoogleSheet(spreadsheetId, employees, requests, accessToken);
+      await syncToAppsScript(appscriptUrl, spreadsheetId, employees, requests);
       setSyncStatus('success');
       const timeStr = new Date().toLocaleTimeString('id-ID');
       setLastSynced(timeStr);
       localStorage.setItem('spc_last_synced_v1', timeStr);
-      alert('Data berhasil diunggah ke Google Sheets!');
+      alert('Data berhasil diunggah ke Google Sheets via Jembatan Apps Script!');
     } catch (err: any) {
       console.warn('Error pushing data to Google Sheet:', err);
       setSyncStatus('error');
@@ -279,9 +181,11 @@ export default function App() {
       'Apakah Anda yakin ingin memutuskan koneksi dengan Spreadsheet ini? Data Anda akan tetap aman di Google Drive, dan sistem akan kembali menggunakan database local di browser Anda.'
     );
     if (!confirmed) return;
-    
+
     setSpreadsheetId(null);
+    setAppscriptUrl(null);
     localStorage.removeItem('spc_spreadsheet_id_v1');
+    localStorage.removeItem('spc_appscript_url_v1');
     localStorage.removeItem('spc_last_synced_v1');
     setLastSynced(null);
     setSyncStatus('idle');
@@ -384,16 +288,16 @@ export default function App() {
   // Reset database back to default initial values
   const handleResetDatabase = async () => {
     if (confirm('Apakah Anda yakin ingin me-reset database sisa cuti dan daftar pengajuan kembali ke data contoh BKHIT Papua Barat Daya?')) {
-      if (spreadsheetId && accessToken) {
+      if (spreadsheetId && appscriptUrl) {
         setSyncStatus('syncing');
         try {
-          await syncToGoogleSheet(spreadsheetId, INITIAL_EMPLOYEES, INITIAL_REQUESTS, accessToken);
+          await syncToAppsScript(appscriptUrl, spreadsheetId, INITIAL_EMPLOYEES, INITIAL_REQUESTS);
           setSyncStatus('success');
           const timeStr = new Date().toLocaleTimeString('id-ID');
           setLastSynced(timeStr);
           localStorage.setItem('spc_last_synced_v1', timeStr);
         } catch (err) {
-          console.warn('Failed to sync database reset to Google Sheets:', err);
+          console.warn('Failed to sync database reset to Google Sheets via Apps Script:', err);
           setSyncStatus('error');
         }
       }
@@ -541,19 +445,15 @@ export default function App() {
         
         {/* Google Sheets Sync Integration Panel */}
         <GoogleSheetsSyncPanel
-          user={user}
           spreadsheetId={spreadsheetId}
+          appscriptUrl={appscriptUrl}
           syncStatus={syncStatus}
           syncError={syncError}
           lastSynced={lastSynced}
-          onLogin={handleLogin}
-          onLogout={handleLogout}
-          onCreateNewSheet={handleCreateNewSheet}
-          onLinkExistingSheet={handleLinkExistingSheet}
+          onConnectAppsScript={handleConnectAppsScript}
           onPullData={() => handlePullData()}
           onPushData={handlePushData}
           onChangeSheet={handleChangeSheet}
-          isLoggingIn={isLoggingIn}
           isUnlocked={isUnlocked}
         />
 

@@ -415,3 +415,106 @@ export async function fetchFromPublicGoogleSheet(spreadsheetId: string): Promise
 
   return { employees, requests };
 }
+
+/**
+ * Fetch and parse data from Google Sheet using Google Apps Script Web App Bridge via local backend proxy
+ */
+export async function fetchFromAppsScript(
+  appscriptUrl: string,
+  spreadsheetId: string
+): Promise<SheetData> {
+  const cleanUrl = appscriptUrl.trim();
+  const cleanId = spreadsheetId.trim();
+  
+  if (!cleanUrl) {
+    throw new Error('URL Jembatan Apps Script kosong. Silakan atur di panel.');
+  }
+  if (!cleanId) {
+    throw new Error('ID Spreadsheet kosong. Silakan atur di panel.');
+  }
+
+  try {
+    const response = await fetch('/api/apps-script-proxy', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        url: cleanUrl,
+        id: cleanId,
+        action: 'pull'
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      let parsedErr;
+      try { parsedErr = JSON.parse(errText); } catch (e) {}
+      throw new Error(parsedErr?.error || `Koneksi ke Google Apps Script via Proxy gagal (Kode Status: ${response.status}).`);
+    }
+
+    const resData = await response.json();
+    if (resData && resData.error) {
+      throw new Error(`Kendala Apps Script: ${resData.error}`);
+    }
+
+    return {
+      employees: resData.employees || [],
+      requests: resData.requests || []
+    };
+  } catch (err: any) {
+    console.error('Error fetching from Apps Script via proxy:', err);
+    throw new Error(err.message || 'Gagal menghubungi Google Apps Script melalui server proxy. Pastikan URL Web App benar dan telah diset ke akses "Siapa saja (Anyone)".');
+  }
+}
+
+/**
+ * Push data to Google Sheet using Google Apps Script Web App Bridge via local backend proxy
+ */
+export async function syncToAppsScript(
+  appscriptUrl: string,
+  spreadsheetId: string,
+  employees: Employee[],
+  requests: LeaveRequest[]
+): Promise<void> {
+  const cleanUrl = appscriptUrl.trim();
+  const cleanId = spreadsheetId.trim();
+  
+  if (!cleanUrl) {
+    throw new Error('URL Jembatan Apps Script kosong.');
+  }
+  if (!cleanId) {
+    throw new Error('ID Spreadsheet kosong.');
+  }
+
+  try {
+    const response = await fetch('/api/apps-script-proxy', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        url: cleanUrl,
+        id: cleanId,
+        action: 'push',
+        data: { employees, requests }
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      let parsedErr;
+      try { parsedErr = JSON.parse(errText); } catch (e) {}
+      throw new Error(parsedErr?.error || `Gagal mengirim data ke Apps Script via Proxy (Kode Status: ${response.status})`);
+    }
+
+    const resData = await response.json();
+    if (resData && resData.error) {
+      throw new Error(`Kendala Apps Script saat menyimpan: ${resData.error}`);
+    }
+  } catch (err: any) {
+    console.error('Error syncing to Apps Script via proxy:', err);
+    throw new Error(err.message || 'Gagal mengirim data ke Google Apps Script melalui server proxy. Pastikan konfigurasi Web App Anda sudah benar.');
+  }
+}
+

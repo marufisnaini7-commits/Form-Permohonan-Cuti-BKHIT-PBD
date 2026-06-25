@@ -6,7 +6,13 @@ import { URL } from "url";
 import { createServer as createViteServer } from "vite";
 
 // Robust redirect-following HTTP client with custom headers
-function fetchUrlWithRedirect(targetUrl: string, maxRedirects = 10): Promise<{ status: number; headers: any; body: string }> {
+function fetchUrlWithRedirect(
+  targetUrl: string,
+  method = "GET",
+  body: string | null = null,
+  headers: any = {},
+  maxRedirects = 10
+): Promise<{ status: number; headers: any; body: string }> {
   return new Promise((resolve, reject) => {
     if (maxRedirects <= 0) {
       return reject(new Error("Terlalu banyak pengalihan (redirect) oleh Google."));
@@ -14,17 +20,25 @@ function fetchUrlWithRedirect(targetUrl: string, maxRedirects = 10): Promise<{ s
 
     try {
       const urlObj = new URL(targetUrl);
+      
+      const mergedHeaders: any = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json,text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,text/plain,*/*;q=0.8",
+        "Accept-Language": "id,en-US,en;q=0.9",
+        ...headers
+      };
+
+      if (body) {
+        mergedHeaders["Content-Length"] = Buffer.byteLength(body).toString();
+      }
+
       const options = {
         protocol: urlObj.protocol,
         hostname: urlObj.hostname,
         port: urlObj.port || (urlObj.protocol === "https:" ? 443 : 80),
         path: urlObj.pathname + urlObj.search,
-        method: "GET",
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,text/plain,*/*;q=0.8",
-          "Accept-Language": "id,en-US,en;q=0.9",
-        }
+        method: method,
+        headers: mergedHeaders
       };
 
       const client = targetUrl.startsWith("https") ? https : http;
@@ -33,12 +47,14 @@ function fetchUrlWithRedirect(targetUrl: string, maxRedirects = 10): Promise<{ s
         const { statusCode } = res;
         
         // Follow redirects (301, 302, 303, 307, 308)
+        // After an Apps Script POST, it redirects using 302 to a GET url.
+        // We follow this using GET method.
         if (statusCode && statusCode >= 300 && statusCode < 400 && res.headers.location) {
           let redirectUrl = res.headers.location;
           if (!redirectUrl.startsWith("http")) {
             redirectUrl = `${urlObj.protocol}//${urlObj.host}${redirectUrl}`;
           }
-          return fetchUrlWithRedirect(redirectUrl, maxRedirects - 1).then(resolve, reject);
+          return fetchUrlWithRedirect(redirectUrl, "GET", null, {}, maxRedirects - 1).then(resolve, reject);
         }
 
         let rawData = "";
@@ -59,6 +75,9 @@ function fetchUrlWithRedirect(targetUrl: string, maxRedirects = 10): Promise<{ s
         reject(err);
       });
 
+      if (body) {
+        req.write(body);
+      }
       req.end();
     } catch (err) {
       reject(err);
@@ -73,7 +92,68 @@ async function startServer() {
   // Disable powered-by header for security
   app.disable('x-powered-by');
 
+  // Support parsing JSON bodies up to 50mb
+  app.use(express.json({ limit: "50mb" }));
+
   // API routes FIRST
+  app.post("/api/apps-script-proxy", async (req, res) => {
+    try {
+      const { url, id, action, data } = req.body;
+      if (!url) {
+        return res.status(400).json({ error: "URL Jembatan Apps Script wajib diisi." });
+      }
+      if (!id) {
+        return res.status(400).json({ error: "ID Spreadsheet wajib diisi." });
+      }
+
+      const cleanUrl = (url as string).trim();
+      const cleanId = (id as string).trim();
+      const requestUrl = `${cleanUrl}?id=${encodeURIComponent(cleanId)}`;
+
+      console.log(`Proxying Apps Script request: action=${action}, ID=${cleanId}`);
+
+      let response;
+      if (action === "pull") {
+        response = await fetchUrlWithRedirect(requestUrl, "GET");
+      } else if (action === "push") {
+        const payload = JSON.stringify(data);
+        response = await fetchUrlWithRedirect(
+          requestUrl,
+          "POST",
+          payload,
+          { "Content-Type": "text/plain;charset=utf-8" }
+        );
+      } else {
+        return res.status(400).json({ error: "Action tidak dikenal." });
+      }
+
+      if (response.status !== 200) {
+        return res.status(response.status).json({
+          error: `Gagal menghubungi Google Apps Script (Kode Status: ${response.status}).`
+        });
+      }
+
+      // Try parsing as JSON to check for Apps Script errors
+      try {
+        const parsed = JSON.parse(response.body);
+        return res.json(parsed);
+      } catch (e) {
+        // If it's not valid JSON, it could be an HTML error page from Google
+        if (response.body.includes("<!DOCTYPE html>") || response.body.includes("<html")) {
+          return res.status(403).json({
+            error: "Gagal memproses respon dari Google Apps Script. Pastikan URL Web App benar dan telah diset aksesnya ke 'Siapa saja' (Anyone)."
+          });
+        }
+        return res.status(500).json({
+          error: "Gagal mengurai respon JSON dari Google Apps Script.",
+          raw: response.body.slice(0, 500)
+        });
+      }
+    } catch (err: any) {
+      console.error("Error in apps-script-proxy:", err);
+      return res.status(500).json({ error: err.message || String(err) });
+    }
+  });
   app.get("/api/public-sheet", async (req, res) => {
     try {
       const { id, sheet } = req.query;
