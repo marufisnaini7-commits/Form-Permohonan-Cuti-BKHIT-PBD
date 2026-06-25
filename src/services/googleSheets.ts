@@ -418,6 +418,7 @@ export async function fetchFromPublicGoogleSheet(spreadsheetId: string): Promise
 
 /**
  * Fetch and parse data from Google Sheet using Google Apps Script Web App Bridge via local backend proxy
+ * with automatic direct browser-to-Apps-Script CORS fallback for static environments like GitHub Pages.
  */
 export async function fetchFromAppsScript(
   appscriptUrl: string,
@@ -433,6 +434,9 @@ export async function fetchFromAppsScript(
     throw new Error('ID Spreadsheet kosong. Silakan atur di panel.');
   }
 
+  let useFallback = false;
+  let fallbackReason = '';
+
   try {
     const response = await fetch('/api/apps-script-proxy', {
       method: 'POST',
@@ -446,30 +450,77 @@ export async function fetchFromAppsScript(
       })
     });
 
-    if (!response.ok) {
+    if (response.status === 404 || response.status === 405) {
+      useFallback = true;
+      fallbackReason = `Proxy tidak tersedia (Kode Status: ${response.status}). Menggunakan koneksi langsung (GitHub Pages/Static).`;
+    } else if (!response.ok) {
       const errText = await response.text();
       let parsedErr;
       try { parsedErr = JSON.parse(errText); } catch (e) {}
       throw new Error(parsedErr?.error || `Koneksi ke Google Apps Script via Proxy gagal (Kode Status: ${response.status}).`);
-    }
+    } else {
+      const resData = await response.json();
+      if (resData && resData.error) {
+        throw new Error(`Kendala Apps Script: ${resData.error}`);
+      }
 
-    const resData = await response.json();
-    if (resData && resData.error) {
-      throw new Error(`Kendala Apps Script: ${resData.error}`);
+      return {
+        employees: resData.employees || [],
+        requests: resData.requests || []
+      };
     }
-
-    return {
-      employees: resData.employees || [],
-      requests: resData.requests || []
-    };
   } catch (err: any) {
-    console.error('Error fetching from Apps Script via proxy:', err);
-    throw new Error(err.message || 'Gagal menghubungi Google Apps Script melalui server proxy. Pastikan URL Web App benar dan telah diset ke akses "Siapa saja (Anyone)".');
+    // If it's a network error (like failed to fetch because of absolute/relative path or server is offline)
+    // or if we marked useFallback
+    if (!useFallback && (err.message?.includes('fetch') || err.name === 'TypeError')) {
+      useFallback = true;
+      fallbackReason = 'Server proxy tidak terjangkau. Mengaktifkan fallback koneksi langsung.';
+    }
+
+    if (!useFallback) {
+      console.error('Error fetching from Apps Script via proxy:', err);
+      throw err;
+    }
   }
+
+  // FALLBACK: Direct CORS call from browser to Google Apps Script
+  if (useFallback) {
+    console.log(`[Google Sheets Service] ${fallbackReason}`);
+    const directUrl = `${cleanUrl}?id=${encodeURIComponent(cleanId)}`;
+    try {
+      const directResponse = await fetch(directUrl, {
+        method: 'GET',
+        mode: 'cors'
+      });
+
+      if (!directResponse.ok) {
+        throw new Error(`Koneksi langsung ke Google Apps Script gagal (Kode Status: ${directResponse.status}).`);
+      }
+
+      const resData = await directResponse.json();
+      if (resData && resData.error) {
+        throw new Error(`Kendala Apps Script: ${resData.error}`);
+      }
+
+      return {
+        employees: resData.employees || [],
+        requests: resData.requests || []
+      };
+    } catch (directErr: any) {
+      console.error('Direct fallback fetch failed:', directErr);
+      throw new Error(
+        `Koneksi gagal. Baik melalui server proxy maupun koneksi langsung browser ke Google Apps Script. ` +
+        `Pastikan URL Web App Anda benar dan memiliki akses 'Siapa saja (Anyone)'. Detail: ${directErr.message}`
+      );
+    }
+  }
+
+  throw new Error('Terjadi kesalahan yang tidak terduga saat mengambil data.');
 }
 
 /**
  * Push data to Google Sheet using Google Apps Script Web App Bridge via local backend proxy
+ * with automatic direct browser-to-Apps-Script CORS fallback for static environments like GitHub Pages.
  */
 export async function syncToAppsScript(
   appscriptUrl: string,
@@ -487,6 +538,9 @@ export async function syncToAppsScript(
     throw new Error('ID Spreadsheet kosong.');
   }
 
+  let useFallback = false;
+  let fallbackReason = '';
+
   try {
     const response = await fetch('/api/apps-script-proxy', {
       method: 'POST',
@@ -501,20 +555,62 @@ export async function syncToAppsScript(
       })
     });
 
-    if (!response.ok) {
+    if (response.status === 404 || response.status === 405) {
+      useFallback = true;
+      fallbackReason = `Proxy tidak tersedia (Kode Status: ${response.status}). Menggunakan koneksi langsung (GitHub Pages/Static).`;
+    } else if (!response.ok) {
       const errText = await response.text();
       let parsedErr;
       try { parsedErr = JSON.parse(errText); } catch (e) {}
       throw new Error(parsedErr?.error || `Gagal mengirim data ke Apps Script via Proxy (Kode Status: ${response.status})`);
-    }
-
-    const resData = await response.json();
-    if (resData && resData.error) {
-      throw new Error(`Kendala Apps Script saat menyimpan: ${resData.error}`);
+    } else {
+      const resData = await response.json();
+      if (resData && resData.error) {
+        throw new Error(`Kendala Apps Script saat menyimpan: ${resData.error}`);
+      }
+      return;
     }
   } catch (err: any) {
-    console.error('Error syncing to Apps Script via proxy:', err);
-    throw new Error(err.message || 'Gagal mengirim data ke Google Apps Script melalui server proxy. Pastikan konfigurasi Web App Anda sudah benar.');
+    if (!useFallback && (err.message?.includes('fetch') || err.name === 'TypeError')) {
+      useFallback = true;
+      fallbackReason = 'Server proxy tidak terjangkau. Mengaktifkan fallback koneksi langsung.';
+    }
+
+    if (!useFallback) {
+      console.error('Error syncing to Apps Script via proxy:', err);
+      throw err;
+    }
+  }
+
+  // FALLBACK: Direct CORS call from browser to Google Apps Script
+  if (useFallback) {
+    console.log(`[Google Sheets Service] ${fallbackReason}`);
+    const directUrl = `${cleanUrl}?id=${encodeURIComponent(cleanId)}`;
+    try {
+      const directResponse = await fetch(directUrl, {
+        method: 'POST',
+        mode: 'cors',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8' // No preflight, safe from CORS preflight issues
+        },
+        body: JSON.stringify({ employees, requests })
+      });
+
+      if (!directResponse.ok) {
+        throw new Error(`Pengiriman langsung ke Google Apps Script gagal (Kode Status: ${directResponse.status}).`);
+      }
+
+      const resData = await directResponse.json();
+      if (resData && resData.error) {
+        throw new Error(`Kendala Apps Script saat menyimpan: ${resData.error}`);
+      }
+    } catch (directErr: any) {
+      console.error('Direct fallback sync failed:', directErr);
+      throw new Error(
+        `Koneksi gagal. Baik melalui server proxy maupun koneksi langsung browser ke Google Apps Script. ` +
+        `Pastikan URL Web App Anda benar dan memiliki akses 'Siapa saja (Anyone)'. Detail: ${directErr.message}`
+      );
+    }
   }
 }
 
