@@ -360,12 +360,12 @@ export default function App() {
               </div>
               <div>
                 <h1 className="text-sm md:text-base font-bold text-white tracking-tight flex items-center space-x-1.5">
-                  <span>Sistem Cuti Pegawai (BKHIT)</span>
+                  <span>Web Sistem Cuti Pegawai</span>
                   <span className="px-1.5 py-0.5 text-[8px] font-bold bg-indigo-900 text-indigo-300 rounded-md uppercase">RESMI</span>
                 </h1>
                 <p className="text-[10px] md:text-xs text-slate-300 flex items-center space-x-1">
                   <Building2 className="w-3 h-3 text-slate-400" />
-                  <span>Karantina Papua Barat Daya</span>
+                  <span>BKHIT Papua Barat Daya</span>
                 </p>
               </div>
             </div>
@@ -373,7 +373,7 @@ export default function App() {
             {/* Quick Context Switch Warning */}
             <div className="hidden md:flex items-center space-x-2 bg-slate-800/80 border border-slate-700/80 px-3 py-1.5 rounded-lg text-slate-300">
               <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
-              <p className="text-[11px] font-medium text-slate-300">Sorong, Papua Barat Daya</p>
+              <p className="text-[11px] font-medium text-slate-300">TIM Kepegawaian BKHIT PBD</p>
             </div>
 
           </div>
@@ -395,7 +395,7 @@ export default function App() {
                 id="tab-karyawan"
               >
                 <FileText className="w-4 h-4" />
-                <span>Portal Pegawai (Form Cuti)</span>
+                <span>Inputan Permohonan Cuti</span>
               </button>
 
               <button
@@ -427,7 +427,7 @@ export default function App() {
                 id="tab-database"
               >
                 <Settings className="w-4 h-4" />
-                <span>Database Sisa Cuti</span>
+                <span>Database Penggunaan Cuti</span>
               </button>
 
               <button
@@ -519,7 +519,7 @@ export default function App() {
       {/* FOOTER */}
       <footer className="bg-white border-t border-gray-200 py-6" id="app-footer">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between text-xs text-gray-400 gap-3">
-          <p>© 2026 Balai Karantina Hewan, Ikan dan Tumbuhan Papua Barat Daya. Layanan Kepegawaian Resmi.</p>
+          <p>© 2026 Balai Karantina Hewan, Ikan dan Tumbuhan Papua Barat Daya. Sistem Layanan Kepegawaian.</p>
           <div className="flex items-center space-x-4">
             <span className="flex items-center space-x-1">
               <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
@@ -659,8 +659,8 @@ export default function App() {
 
             {/* Hint footer */}
             <div className="mt-4 text-[10px] text-gray-400 border-t border-gray-50 pt-3 w-full">
-              <span>Petunjuk: PIN standar sistem adalah </span>
-              <span className="font-mono font-bold text-gray-500 bg-gray-50 border border-gray-100 px-1 py-0.5 rounded">1971</span>
+              <span>Petunjuk: Gunakan PIN Yang Ada </span>
+              <span className="font-mono font-bold text-gray-500 bg-gray-50 border border-gray-100 px-1 py-0.5 rounded"></span>
             </div>
 
           </div>
