@@ -18,6 +18,7 @@ import {
   Globe,
   Settings
 } from 'lucide-react';
+import { DEFAULT_SPREADSHEET_ID, DEFAULT_APPSCRIPT_URL } from '../config';
 
 interface GoogleSheetsSyncPanelProps {
   spreadsheetId: string | null;
@@ -428,9 +429,20 @@ function createJsonResponse(data) {
               /* CASE B: CONNECTED */
               <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-center bg-emerald-50/20 p-4 rounded-xl border border-emerald-100/50 mt-2">
                 <div className="md:col-span-8 space-y-2">
-                  <div className="flex items-center space-x-2 text-xs font-bold text-emerald-800">
-                    <CheckCircle2 className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-                    <span>Sinkronisasi Google Sheet Aktif (Jembatan Apps Script)</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center space-x-1.5 text-xs font-bold text-emerald-800">
+                      <CheckCircle2 className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
+                      <span>Sinkronisasi Google Sheet Aktif</span>
+                    </div>
+                    {spreadsheetId === DEFAULT_SPREADSHEET_ID && appscriptUrl === DEFAULT_APPSCRIPT_URL ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-xs">
+                        🔌 KONEKSI OTOMATIS BKHIT
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200 shadow-xs">
+                        🛠️ KONEKSI MANUAL KUSTOM
+                      </span>
+                    )}
                   </div>
                   
                   <div className="space-y-1 text-[10px] font-mono text-gray-600">

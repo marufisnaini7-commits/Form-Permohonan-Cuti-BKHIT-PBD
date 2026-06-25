@@ -7,6 +7,7 @@ import { DatabaseCutiView } from './components/DatabaseCutiView';
 import { BusinessProcessView } from './components/BusinessProcessView';
 import { GoogleSheetsSyncPanel } from './components/GoogleSheetsSyncPanel';
 import { fetchFromAppsScript, syncToAppsScript } from './services/googleSheets';
+import { DEFAULT_SPREADSHEET_ID, DEFAULT_APPSCRIPT_URL } from './config';
 import { ClipboardCheck, FileText, Settings, HelpCircle, Building2, CalendarRange, Lock, Unlock, Key } from 'lucide-react';
 
 const LOCAL_STORAGE_EMPLOYEES_KEY = 'spc_employees_v1';
@@ -28,8 +29,20 @@ export default function App() {
   const [savedPin, setSavedPin] = useState(() => localStorage.getItem('spc_pimpinan_pin_v1') || '1971');
 
   // Google Apps Script / Sheet database states
-  const [spreadsheetId, setSpreadsheetId] = useState<string | null>(localStorage.getItem('spc_spreadsheet_id_v1'));
-  const [appscriptUrl, setAppscriptUrl] = useState<string | null>(localStorage.getItem('spc_appscript_url_v1'));
+  const [spreadsheetId, setSpreadsheetId] = useState<string | null>(() => {
+    const stored = localStorage.getItem('spc_spreadsheet_id_v1');
+    if (stored) return stored;
+    const disconnected = localStorage.getItem('spc_manually_disconnected_v1');
+    if (disconnected) return null;
+    return DEFAULT_SPREADSHEET_ID || null;
+  });
+  const [appscriptUrl, setAppscriptUrl] = useState<string | null>(() => {
+    const stored = localStorage.getItem('spc_appscript_url_v1');
+    if (stored) return stored;
+    const disconnected = localStorage.getItem('spc_manually_disconnected_v1');
+    if (disconnected) return null;
+    return DEFAULT_APPSCRIPT_URL || null;
+  });
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const [syncError, setSyncError] = useState<string | null>(null);
   const [lastSynced, setLastSynced] = useState<string | null>(localStorage.getItem('spc_last_synced_v1'));
@@ -61,11 +74,14 @@ export default function App() {
       setInitialized(true);
     }
 
-    // Auto pull data if connected
-    const storedSpreadsheetId = localStorage.getItem('spc_spreadsheet_id_v1');
-    const storedAppscriptUrl = localStorage.getItem('spc_appscript_url_v1');
-    if (storedSpreadsheetId && storedAppscriptUrl) {
-      handlePullData(storedSpreadsheetId, storedAppscriptUrl);
+    // Auto pull data if connected (either saved in localStorage or using default config)
+    const activeSpreadsheetId = localStorage.getItem('spc_spreadsheet_id_v1') || 
+      (localStorage.getItem('spc_manually_disconnected_v1') ? null : DEFAULT_SPREADSHEET_ID);
+    const activeAppscriptUrl = localStorage.getItem('spc_appscript_url_v1') || 
+      (localStorage.getItem('spc_manually_disconnected_v1') ? null : DEFAULT_APPSCRIPT_URL);
+
+    if (activeSpreadsheetId && activeAppscriptUrl) {
+      handlePullData(activeSpreadsheetId, activeAppscriptUrl);
     }
   }, []);
 
@@ -114,6 +130,7 @@ export default function App() {
       setAppscriptUrl(url);
       localStorage.setItem('spc_spreadsheet_id_v1', id);
       localStorage.setItem('spc_appscript_url_v1', url);
+      localStorage.removeItem('spc_manually_disconnected_v1');
 
       setSyncStatus('success');
       const timeStr = new Date().toLocaleTimeString('id-ID');
@@ -187,6 +204,7 @@ export default function App() {
     localStorage.removeItem('spc_spreadsheet_id_v1');
     localStorage.removeItem('spc_appscript_url_v1');
     localStorage.removeItem('spc_last_synced_v1');
+    localStorage.setItem('spc_manually_disconnected_v1', 'true');
     setLastSynced(null);
     setSyncStatus('idle');
   };
