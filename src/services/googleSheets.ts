@@ -417,6 +417,30 @@ export async function fetchFromPublicGoogleSheet(spreadsheetId: string): Promise
 }
 
 /**
+ * Helper to detect if we should route Google Apps Script requests through the local Express proxy.
+ * If running on a static hosting environment like GitHub Pages, we MUST use direct CORS requests.
+ */
+function shouldUseProxy(): boolean {
+  if (typeof window === 'undefined') return false;
+  const hostname = window.location.hostname;
+  
+  // If we are on GitHub Pages or other static hosting, there's no node.js server backend.
+  if (
+    hostname.includes('github.io') || 
+    hostname.includes('github.com') ||
+    hostname.includes('vercel.app') || 
+    hostname.includes('netlify.app') || 
+    hostname.includes('pages.dev') ||
+    window.location.protocol === 'file:'
+  ) {
+    return false;
+  }
+  
+  // Only use proxy if we are on our dev server environment or localhost
+  return hostname.includes('localhost') || hostname.includes('run.app');
+}
+
+/**
  * Fetch and parse data from Google Sheet using Google Apps Script Web App Bridge via local backend proxy
  * with automatic direct browser-to-Apps-Script CORS fallback for static environments like GitHub Pages.
  */
@@ -434,52 +458,56 @@ export async function fetchFromAppsScript(
     throw new Error('ID Spreadsheet kosong. Silakan atur di panel.');
   }
 
-  let useFallback = false;
-  let fallbackReason = '';
+  let useFallback = !shouldUseProxy();
+  let fallbackReason = useFallback 
+    ? 'Menjalankan di lingkungan static (GitHub Pages). Koneksi langsung diaktifkan.' 
+    : '';
 
-  try {
-    const response = await fetch('/api/apps-script-proxy', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        url: cleanUrl,
-        id: cleanId,
-        action: 'pull'
-      })
-    });
+  if (!useFallback) {
+    try {
+      const response = await fetch('/api/apps-script-proxy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          url: cleanUrl,
+          id: cleanId,
+          action: 'pull'
+        })
+      });
 
-    if (response.status === 404 || response.status === 405) {
-      useFallback = true;
-      fallbackReason = `Proxy tidak tersedia (Kode Status: ${response.status}). Menggunakan koneksi langsung (GitHub Pages/Static).`;
-    } else if (!response.ok) {
-      const errText = await response.text();
-      let parsedErr;
-      try { parsedErr = JSON.parse(errText); } catch (e) {}
-      throw new Error(parsedErr?.error || `Koneksi ke Google Apps Script via Proxy gagal (Kode Status: ${response.status}).`);
-    } else {
-      const resData = await response.json();
-      if (resData && resData.error) {
-        throw new Error(`Kendala Apps Script: ${resData.error}`);
+      if (response.status === 404 || response.status === 405) {
+        useFallback = true;
+        fallbackReason = `Proxy tidak tersedia (Kode Status: ${response.status}). Menggunakan koneksi langsung (GitHub Pages/Static).`;
+      } else if (!response.ok) {
+        const errText = await response.text();
+        let parsedErr;
+        try { parsedErr = JSON.parse(errText); } catch (e) {}
+        throw new Error(parsedErr?.error || `Koneksi ke Google Apps Script via Proxy gagal (Kode Status: ${response.status}).`);
+      } else {
+        const resData = await response.json();
+        if (resData && resData.error) {
+          throw new Error(`Kendala Apps Script: ${resData.error}`);
+        }
+
+        return {
+          employees: resData.employees || [],
+          requests: resData.requests || []
+        };
+      }
+    } catch (err: any) {
+      // If it's a network error (like failed to fetch because of absolute/relative path or server is offline)
+      // or if we marked useFallback
+      if (!useFallback && (err.message?.includes('fetch') || err.name === 'TypeError')) {
+        useFallback = true;
+        fallbackReason = 'Server proxy tidak terjangkau. Mengaktifkan fallback koneksi langsung.';
       }
 
-      return {
-        employees: resData.employees || [],
-        requests: resData.requests || []
-      };
-    }
-  } catch (err: any) {
-    // If it's a network error (like failed to fetch because of absolute/relative path or server is offline)
-    // or if we marked useFallback
-    if (!useFallback && (err.message?.includes('fetch') || err.name === 'TypeError')) {
-      useFallback = true;
-      fallbackReason = 'Server proxy tidak terjangkau. Mengaktifkan fallback koneksi langsung.';
-    }
-
-    if (!useFallback) {
-      console.error('Error fetching from Apps Script via proxy:', err);
-      throw err;
+      if (!useFallback) {
+        console.error('Error fetching from Apps Script via proxy:', err);
+        throw err;
+      }
     }
   }
 
@@ -538,47 +566,51 @@ export async function syncToAppsScript(
     throw new Error('ID Spreadsheet kosong.');
   }
 
-  let useFallback = false;
-  let fallbackReason = '';
+  let useFallback = !shouldUseProxy();
+  let fallbackReason = useFallback 
+    ? 'Menjalankan di lingkungan static (GitHub Pages). Koneksi langsung diaktifkan.' 
+    : '';
 
-  try {
-    const response = await fetch('/api/apps-script-proxy', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        url: cleanUrl,
-        id: cleanId,
-        action: 'push',
-        data: { employees, requests }
-      })
-    });
+  if (!useFallback) {
+    try {
+      const response = await fetch('/api/apps-script-proxy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          url: cleanUrl,
+          id: cleanId,
+          action: 'push',
+          data: { employees, requests }
+        })
+      });
 
-    if (response.status === 404 || response.status === 405) {
-      useFallback = true;
-      fallbackReason = `Proxy tidak tersedia (Kode Status: ${response.status}). Menggunakan koneksi langsung (GitHub Pages/Static).`;
-    } else if (!response.ok) {
-      const errText = await response.text();
-      let parsedErr;
-      try { parsedErr = JSON.parse(errText); } catch (e) {}
-      throw new Error(parsedErr?.error || `Gagal mengirim data ke Apps Script via Proxy (Kode Status: ${response.status})`);
-    } else {
-      const resData = await response.json();
-      if (resData && resData.error) {
-        throw new Error(`Kendala Apps Script saat menyimpan: ${resData.error}`);
+      if (response.status === 404 || response.status === 405) {
+        useFallback = true;
+        fallbackReason = `Proxy tidak tersedia (Kode Status: ${response.status}). Menggunakan koneksi langsung (GitHub Pages/Static).`;
+      } else if (!response.ok) {
+        const errText = await response.text();
+        let parsedErr;
+        try { parsedErr = JSON.parse(errText); } catch (e) {}
+        throw new Error(parsedErr?.error || `Gagal mengirim data ke Apps Script via Proxy (Kode Status: ${response.status})`);
+      } else {
+        const resData = await response.json();
+        if (resData && resData.error) {
+          throw new Error(`Kendala Apps Script saat menyimpan: ${resData.error}`);
+        }
+        return;
       }
-      return;
-    }
-  } catch (err: any) {
-    if (!useFallback && (err.message?.includes('fetch') || err.name === 'TypeError')) {
-      useFallback = true;
-      fallbackReason = 'Server proxy tidak terjangkau. Mengaktifkan fallback koneksi langsung.';
-    }
+    } catch (err: any) {
+      if (!useFallback && (err.message?.includes('fetch') || err.name === 'TypeError')) {
+        useFallback = true;
+        fallbackReason = 'Server proxy tidak terjangkau. Mengaktifkan fallback koneksi langsung.';
+      }
 
-    if (!useFallback) {
-      console.error('Error syncing to Apps Script via proxy:', err);
-      throw err;
+      if (!useFallback) {
+        console.error('Error syncing to Apps Script via proxy:', err);
+        throw err;
+      }
     }
   }
 
