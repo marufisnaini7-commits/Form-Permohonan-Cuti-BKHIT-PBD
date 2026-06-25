@@ -28,24 +28,29 @@ var import_https = __toESM(require("https"), 1);
 var import_http = __toESM(require("http"), 1);
 var import_url = require("url");
 var import_vite = require("vite");
-function fetchUrlWithRedirect(targetUrl, maxRedirects = 10) {
+function fetchUrlWithRedirect(targetUrl, method = "GET", body = null, headers = {}, maxRedirects = 10) {
   return new Promise((resolve, reject) => {
     if (maxRedirects <= 0) {
       return reject(new Error("Terlalu banyak pengalihan (redirect) oleh Google."));
     }
     try {
       const urlObj = new import_url.URL(targetUrl);
+      const mergedHeaders = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json,text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,text/plain,*/*;q=0.8",
+        "Accept-Language": "id,en-US,en;q=0.9",
+        ...headers
+      };
+      if (body) {
+        mergedHeaders["Content-Length"] = Buffer.byteLength(body).toString();
+      }
       const options = {
         protocol: urlObj.protocol,
         hostname: urlObj.hostname,
         port: urlObj.port || (urlObj.protocol === "https:" ? 443 : 80),
         path: urlObj.pathname + urlObj.search,
-        method: "GET",
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,text/plain,*/*;q=0.8",
-          "Accept-Language": "id,en-US,en;q=0.9"
-        }
+        method,
+        headers: mergedHeaders
       };
       const client = targetUrl.startsWith("https") ? import_https.default : import_http.default;
       const req = client.request(options, (res) => {
@@ -55,7 +60,7 @@ function fetchUrlWithRedirect(targetUrl, maxRedirects = 10) {
           if (!redirectUrl.startsWith("http")) {
             redirectUrl = `${urlObj.protocol}//${urlObj.host}${redirectUrl}`;
           }
-          return fetchUrlWithRedirect(redirectUrl, maxRedirects - 1).then(resolve, reject);
+          return fetchUrlWithRedirect(redirectUrl, "GET", null, {}, maxRedirects - 1).then(resolve, reject);
         }
         let rawData = "";
         res.setEncoding("utf8");
@@ -73,6 +78,9 @@ function fetchUrlWithRedirect(targetUrl, maxRedirects = 10) {
       req.on("error", (err) => {
         reject(err);
       });
+      if (body) {
+        req.write(body);
+      }
       req.end();
     } catch (err) {
       reject(err);
@@ -83,6 +91,58 @@ async function startServer() {
   const app = (0, import_express.default)();
   const PORT = 3e3;
   app.disable("x-powered-by");
+  app.use(import_express.default.json({ limit: "50mb" }));
+  app.post("/api/apps-script-proxy", async (req, res) => {
+    try {
+      const { url, id, action, data } = req.body;
+      if (!url) {
+        return res.status(400).json({ error: "URL Jembatan Apps Script wajib diisi." });
+      }
+      if (!id) {
+        return res.status(400).json({ error: "ID Spreadsheet wajib diisi." });
+      }
+      const cleanUrl = url.trim();
+      const cleanId = id.trim();
+      const requestUrl = `${cleanUrl}?id=${encodeURIComponent(cleanId)}`;
+      console.log(`Proxying Apps Script request: action=${action}, ID=${cleanId}`);
+      let response;
+      if (action === "pull") {
+        response = await fetchUrlWithRedirect(requestUrl, "GET");
+      } else if (action === "push") {
+        const payload = JSON.stringify(data);
+        response = await fetchUrlWithRedirect(
+          requestUrl,
+          "POST",
+          payload,
+          { "Content-Type": "text/plain;charset=utf-8" }
+        );
+      } else {
+        return res.status(400).json({ error: "Action tidak dikenal." });
+      }
+      if (response.status !== 200) {
+        return res.status(response.status).json({
+          error: `Gagal menghubungi Google Apps Script (Kode Status: ${response.status}).`
+        });
+      }
+      try {
+        const parsed = JSON.parse(response.body);
+        return res.json(parsed);
+      } catch (e) {
+        if (response.body.includes("<!DOCTYPE html>") || response.body.includes("<html")) {
+          return res.status(403).json({
+            error: "Gagal memproses respon dari Google Apps Script. Pastikan URL Web App benar dan telah diset aksesnya ke 'Siapa saja' (Anyone)."
+          });
+        }
+        return res.status(500).json({
+          error: "Gagal mengurai respon JSON dari Google Apps Script.",
+          raw: response.body.slice(0, 500)
+        });
+      }
+    } catch (err) {
+      console.error("Error in apps-script-proxy:", err);
+      return res.status(500).json({ error: err.message || String(err) });
+    }
+  });
   app.get("/api/public-sheet", async (req, res) => {
     try {
       const { id, sheet } = req.query;
